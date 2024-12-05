@@ -3,10 +3,20 @@
 
 namespace miniparser {
 
-void dfs(std::shared_ptr<ASTnode> ptr) {
-    std::cerr << ptr->display << '\n';
+// '|' "─" '└' '├' '┬' '│'
+
+void dfs(std::shared_ptr<ASTnode> ptr, std::string tab) {
+    std::cerr << tab << ptr->display << '\n';
+    if (!tab.empty()) {
+        if (tab.substr(tab.size() - 12, 3) == "├") {
+            tab = tab.substr(0, tab.size() - 12) + "│   ";
+        } else if (tab.substr(tab.size() - 12, 3) == "└") {
+            tab = tab.substr(0, tab.size() - 12) + "    ";
+        }
+    }
     for (auto sub : ptr->children) {
-        dfs(sub);
+        bool last = (sub == ptr->children.back());
+        dfs(sub, tab + (last ? "└───" : "├───"));
     }
 }
 

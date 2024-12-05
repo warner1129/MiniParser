@@ -28,38 +28,24 @@ struct successParserOutput {
 using ParserOutput = std::optional<successParserOutput>;
 using Parser = std::function<ParserOutput(ParserInput)>;
 
-template<class T>
+template<class T = std::string>
 struct ParserCombinator {
+private:
     Parser parser;
+    bool is_terminal{};
+public:
     ParserCombinator() {}
-    ParserCombinator(Parser parser) {
-        this->parser = parser;
-    }
-    ParserCombinator<T> lazy() const {
-        return ParserCombinator(
-            [ptr=this](ParserInput input) -> ParserOutput {
-                return (*ptr)(input);
-            }
-        );
-    }
-    ParserOutput operator()(ParserInput input) const {
-        return parser(input);
-    }
+    ParserCombinator(Parser);
     template<class... A> requires (std::is_same_v<T, std::string>)
-    ParserCombinator<T> &operator=(const ParserCombinator<detail::MulType<A...>>& pc) {
-        parser = [=](ParserInput input) -> ParserOutput {
-            auto ret = pc(input);
-            if (!ret) {
-                return failureParserOutput;
-            }
-            for (auto subast : ret->ast->children) {
-                ret->ast->display += subast->display;
-            }
-            ret->ast->result = ret->ast->display;
-            return ret;
-        };
-        return *this;
-    }
+    ParserCombinator(const ParserCombinator<detail::MulType<A...>>&);
+    ParserOutput operator()(ParserInput input) const;
+    void setTerminal(bool = true);
+    void setParser(Parser);
+    Parser getParser() const;
+    ParserCombinator<T> lazy() const;
+    ParserCombinator<T>& operator=(const ParserCombinator<T>&);
+    template<class... A> requires (std::is_same_v<T, std::string>)
+    ParserCombinator<T>& operator=(const ParserCombinator<detail::MulType<A...>>&);
 };
 
 namespace detail {
@@ -88,7 +74,10 @@ template<class T>
 using CombinatorType_t = CombinatorType<std::remove_reference_t<T>>::type;
 
 template<class R, class... A>
-struct Signature { using result_type = R; using args_tuple = std::tuple<A...>; };
+struct Signature {
+    using result_type = R;
+    using args_tuple = std::tuple<A...>;
+};
 
 template<class T>
 struct removeClass {};
@@ -112,91 +101,38 @@ struct getSignature_impl<R(&)(A...) noexcept> : std::type_identity<Signature<R, 
 template<class R, class... A>
 struct getSignature_impl<R(*)(A...) noexcept> : std::type_identity<Signature<R, A...>> {};
 template<class T>
-using getSignature = getSignature_impl<T>::type;
+using getSignature_t = getSignature_impl<T>::type;
 
 template<class A, class... B>
-std::tuple<A, B...> toTuple(std::list<std::shared_ptr<ASTnode>>::iterator it) {
-    if constexpr (sizeof...(B) == 0) {
-        return std::tuple<A>(any_cast<A>((*it)->result));
-    } else {
-        return std::tuple_cat(toTuple<A>(it), toTuple<B...>(next(it)));
-    }
-}
+std::tuple<A, B...> toTuple(std::list<std::shared_ptr<ASTnode>>::iterator);
 
 template<class T>
-std::string toString(T value) {
-    return std::to_string(value);
-}
-template<>
-std::string toString<std::string>(std::string);
+std::string toString(T);
 
 } // namespace detail
-
-template<class T> requires (!detail::is_MulType_v<T>)
-ParserCombinator<detail::MulType<T>> upToMul(ParserCombinator<T> combinator) {
-    return Parser{[=](ParserInput input) -> ParserOutput {
-        auto ret = combinator(input);
-        if (!ret) {
-            return failureParserOutput;
-        }
-        std::shared_ptr<ASTnode> node = std::make_shared<ASTnode>();
-        node->children.push_back(ret->ast);
-        return successParserOutput{node, ret->remain};
-    }};
-}
 
 template<class A, class B, 
          class R = detail::CatType_t<detail::CombinatorType_t<A>, detail::CombinatorType_t<B>>>
 requires (detail::is_Combinator_v<A> and detail::is_Combinator_v<B>)
-auto operator+(A&& pc1, B&& pc2) {
-    if constexpr (std::is_lvalue_reference_v<A>) {
-        return pc1.lazy() + std::forward<B>(pc2);
-    } else if constexpr (std::is_lvalue_reference_v<B>) {
-        return std::forward<A>(pc1) + pc2.lazy();
-    } else if constexpr (!detail::is_MulType_v<detail::CombinatorType_t<A>>) {
-        return upToMul(pc1) + std::forward<B>(pc2);
-    } else if constexpr (!detail::is_MulType_v<detail::CombinatorType_t<B>>) {
-        return std::forward<A>(pc1) + upToMul(pc2);
-    } else {
-        return ParserCombinator<R>{Parser{
-            [=](ParserInput input) -> ParserOutput {
-                auto ret1 = pc1(input);
-                if (!ret1) {
-                    return failureParserOutput;
-                }
-                auto ret2 = pc2(ret1->remain);
-                if (!ret2) {
-                    return failureParserOutput;
-                }
-                ret1->ast->children.splice(ret1->ast->children.end(), ret2->ast->children);
-                ret1->remain = ret2->remain;
-                return ret1;
-            }
-        }};
-    }
-}
+auto operator+(A&&, B&&);
 
-template<class Func, class R = detail::getSignature<Func>::result_type, class T>
-requires (std::is_same_v<typename detail::getSignature<Func>::args_tuple, std::tuple<T>>)
-ParserCombinator<R> operator>>(ParserCombinator<T> pc, Func&& func) {
-    return upToMul(pc) >> func;
-}
+template<class A, class B, class R = detail::CombinatorType_t<A>>
+requires (detail::is_Combinator_v<A> and detail::is_Combinator_v<B>)
+auto operator|(A&&, B&&);
 
-template<class Func, class R = detail::getSignature<Func>::result_type, class... T>
-requires (std::is_same_v<typename detail::getSignature<Func>::args_tuple, std::tuple<T...>>)
-ParserCombinator<R> operator>>(ParserCombinator<detail::MulType<T...>> pc, Func&& func) {
-    return ParserCombinator<R>{Parser{
-        [=](ParserInput input) -> ParserOutput {
-            auto ret = pc(input);
-            if (!ret) {
-                return failureParserOutput;
-            }
-            ret->ast->result = std::apply(func, detail::toTuple<T...>(ret->ast->children.begin()));
-            ret->ast->display = detail::toString<R>(std::any_cast<R>(ret->ast->result));
-            return ret;
-        }
-    }};
-}
+template<class Func, class R = detail::getSignature_t<Func>::result_type, class T>
+requires (std::is_same_v<typename detail::getSignature_t<Func>::args_tuple, std::tuple<T>>)
+ParserCombinator<R> operator>>(ParserCombinator<T>, Func&&);
+
+template<class Func, class R = detail::getSignature_t<Func>::result_type, class... T>
+requires (std::is_same_v<typename detail::getSignature_t<Func>::args_tuple, std::tuple<T...>>)
+ParserCombinator<R> operator>>(ParserCombinator<detail::MulType<T...>>, Func&&);
+
+template<class T> requires (!detail::is_MulType_v<T>)
+ParserCombinator<detail::MulType<T>> upToMul(ParserCombinator<T>);
+
+template<class T> requires (detail::is_MulType_v<T>)
+ParserCombinator<std::string> downToStr(ParserCombinator<T>);
 
 ParserCombinator<std::string> ending();
 ParserCombinator<std::string> token(std::string);
@@ -204,3 +140,5 @@ ParserCombinator<std::string> token(const std::function<bool(char)>&);
 ParserCombinator<std::string> oneof(std::string);
 
 } // namespace miniparser
+
+#include "parser.tpp"

@@ -7,11 +7,9 @@ namespace miniparser {
 namespace detail {
 
 template<>
-std::string toString<std::string>(std::string str) {
-    return str;
-}
+std::string toString<std::string>(std::string str) { return str; }
 
-} // namespace detail
+} // namespaec detail
 
 ParserCombinator<std::string> ending() {
     return Parser{
