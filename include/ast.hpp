@@ -10,6 +10,6 @@ struct ASTnode {
     std::string display;
 };
 
-void dfs(std::shared_ptr<ASTnode>, std::string = "");
+void printAST(std::ostream&, std::shared_ptr<ASTnode>);
 
 } // namespace miniparser

@@ -47,8 +47,14 @@ ParserCombinator<T> ParserCombinator<T>::lazy() const {
 }
 
 template<class T>
-ParserCombinator<T>& ParserCombinator<T>::operator=(const ParserCombinator<T>& pc) {
+ParserCombinator<T>& ParserCombinator<T>::operator=(ParserCombinator<T>&& pc) {
     this->parser = pc.getParser();
+    return *this;
+}
+
+template<class T>
+ParserCombinator<T>& ParserCombinator<T>::operator=(const ParserCombinator<T>& pc) {
+    this->parser = pc.lazy().getParser();
     return *this;
 }
 
@@ -92,11 +98,11 @@ template<class A, class B, class R>
 requires (detail::is_Combinator_v<A> and detail::is_Combinator_v<B>)
 auto operator+(A&& pc1, B&& pc2) {
     if constexpr (std::is_lvalue_reference_v<A>) {
-        return pc1.lazy() + std::forward<B>(pc2);
+        return pc1.lazy()           + std::forward<B>(pc2);
     } else if constexpr (std::is_lvalue_reference_v<B>) {
         return std::forward<A>(pc1) + pc2.lazy();
     } else if constexpr (!detail::is_MulType_v<detail::CombinatorType_t<A>>) {
-        return upToMul(pc1) + std::forward<B>(pc2);
+        return upToMul(pc1)         + std::forward<B>(pc2);
     } else if constexpr (!detail::is_MulType_v<detail::CombinatorType_t<B>>) {
         return std::forward<A>(pc1) + upToMul(pc2);
     } else {
@@ -122,11 +128,11 @@ template<class A, class B, class R>
 requires (detail::is_Combinator_v<A> and detail::is_Combinator_v<B>)
 auto operator|(A&& pc1, B&& pc2) {
     if constexpr (std::is_lvalue_reference_v<A>) {
-        return pc1.lazy() | std::forward<B>(pc2);
+        return pc1.lazy()           | std::forward<B>(pc2);
     } else if constexpr (std::is_lvalue_reference_v<B>) {
         return std::forward<A>(pc1) | pc2.lazy();
     } else if constexpr (detail::is_MulType_v<detail::CombinatorType_t<A>>) {
-        return downToStr(pc1) | std::forward<B>(pc2);
+        return downToStr(pc1)       | std::forward<B>(pc2);
     } else if constexpr (detail::is_MulType_v<detail::CombinatorType_t<B>>) {
         return std::forward<A>(pc1) | downToStr(pc2);
     } else {

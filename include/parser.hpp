@@ -36,6 +36,7 @@ private:
 public:
     ParserCombinator() {}
     ParserCombinator(Parser);
+    ParserCombinator(const ParserCombinator&) = default;
     template<class... A> requires (std::is_same_v<T, std::string>)
     ParserCombinator(const ParserCombinator<detail::MulType<A...>>&);
     ParserOutput operator()(ParserInput input) const;
@@ -43,6 +44,7 @@ public:
     void setParser(Parser);
     Parser getParser() const;
     ParserCombinator<T> lazy() const;
+    ParserCombinator<T>& operator=(ParserCombinator<T>&&);
     ParserCombinator<T>& operator=(const ParserCombinator<T>&);
     template<class... A> requires (std::is_same_v<T, std::string>)
     ParserCombinator<T>& operator=(const ParserCombinator<detail::MulType<A...>>&);
